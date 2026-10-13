@@ -1,0 +1,606 @@
+# Copyright (c) MAPFRE DevOps Platform
+#
+name: Action-ci-token Self-Test
+run-name: "Action CI Token Self-Test #${{ github.run_number }}"
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+    REPO_OK: "action-npm"
+    REPO_FAIL: "action-git"
+    PLATFORM_REPO: arch-ram-reusable-workflows
+    SPECTRAL_PLATFORM_REPO: arch-bsmar-mk-catalogvalidate
+    NOT_ALLOWED_PLATFORM_REPO: arch-ram-reusable-workflows-test
+    REPOS_NON_AUTHORIZED: maptech-zeusadop-docs
+
+jobs:
+
+  generate-ci-token:
+    if: ${{ !startsWith(github.head_ref , 'autodoc--') && !startsWith(github.head_ref , 'release-please-') }}
+    runs-on: 'ubuntu-latest'
+    name: Generate CI Token
+    outputs:
+      token: ${{ steps.get-token.outputs.token }}
+      platform-token: ${{ steps.get-token-platform.outputs.token }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::767397814329:role/github-actions-ci-token
+          aws-region: eu-west-1
+
+      - name: Load configuration
+        id: config
+        uses: ./internal/get-config
+        with:
+          platform-repo: ${{ env.PLATFORM_REPO }}
+
+      - name: Generate scoped token
+        id: get-token
+        uses: ./internal/get-token
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: 'deployer'
+          repositories: ${{github.event.repository.name}},${{ env.REPO_OK }}
+          #platform-repositories: ${{ steps.config.outputs.repos }}
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Generate scoped token (platform)
+        id: get-token-platform
+        uses: ./internal/get-token
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: 'reader'
+          repositories: ${{ env.REPO_OK }}
+          platform-repositories: ${{ steps.config.outputs.repos }}
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Refresh GH_TOKEN_ENCRYPTION_PASSPHRASE 
+        id: refresh-passphrase
+        uses: ./internal/get-token
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: 'secrets'
+          repositories: ${{ github.repository }}          
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Verify no private key in GITHUB_ENV
+        shell: bash
+        run: |
+          if grep -qE 'BEGIN (RSA )?PRIVATE KEY' "$GITHUB_ENV" 2>/dev/null; then
+            echo '::error::SECURITY REGRESSION: RSA private key found in GITHUB_ENV — private key lifecycle fix is broken!'
+            exit 1
+          fi
+          echo '::notice::Security check passed — GITHUB_ENV contains no private key material'
+
+      - name: Load configuration (verify platform-repo filtering)
+        continue-on-error: true
+        id: config-filtered
+        uses: ./internal/get-config
+        with:
+          platform-repo: ${{ env.NOT_ALLOWED_PLATFORM_REPO }}
+
+      - name: Verify Load configuration (verify platform-repo filtering) failed
+        run: |
+          if [ "${{ steps.config-filtered.outcome }}" = "failure" ]; then
+            echo "✅ Load configuration correctly failed for mapfre-tech/${{ env.NOT_ALLOWED_PLATFORM_REPO }} (token not scoped to this repo)"
+          else
+            echo "❌ Load configuration should have failed for mapfre-tech/${{ env.NOT_ALLOWED_PLATFORM_REPO }} but succeeded"
+            exit 1
+          fi
+
+  load-non-allowed-platform-repo:
+    if: ${{ !startsWith(github.head_ref , 'autodoc--') && !startsWith(github.head_ref , 'release-please-') }}
+    runs-on: 'ubuntu-latest'
+    name: Generate CI Token for non allowed platform repo  
+    steps:
+      - uses: actions/checkout@v6
+      - name: Load configuration (verify platform-repo filtering)
+        continue-on-error: true
+        id: config-filtered
+        uses: ./internal/get-config
+        with:
+          platform-repo: ${{ env.NOT_ALLOWED_PLATFORM_REPO }}
+
+      - name: Verify Load configuration (verify platform-repo filtering) failed
+        run: |
+          if [ "${{ steps.config-filtered.outcome }}" = "failure" ]; then
+            echo "✅ Load configuration correctly failed for mapfre-tech/${{ env.NOT_ALLOWED_PLATFORM_REPO }} (token not scoped to this repo)"
+          else
+            echo "❌ Load configuration should have failed for mapfre-tech/${{ env.NOT_ALLOWED_PLATFORM_REPO }} but succeeded"
+            exit 1
+          fi
+
+  load-cap-repos:
+    if: ${{ !startsWith(github.head_ref , 'autodoc--') && !startsWith(github.head_ref , 'release-please-') }}
+    runs-on: 'ubuntu-latest'
+    name: Generate CI Token for cap repos
+    steps:
+      - uses: actions/checkout@v6
+      - name: Load configuration (Include CAP repos)        
+        id: config-include-cap
+        uses: ./internal/get-config
+        with:          
+          include-cap-repos: true
+
+      - name: Load configuration (Exclude CAP repos)        
+        id: config-exclude-cap
+        uses: ./internal/get-config
+        with:          
+          include-cap-repos: false
+
+      # Verify cloud-capinfra-code is included in config-include-cap and excluded in config-exclude-cap
+      - name: Verify cloud-capinfra-code repo is included/excluded correctly
+        run: |
+          if [[ "${{ steps.config-include-cap.outputs.repos }}" == *"cloud-capinfra-code"* ]]; then
+            echo "✅ cloud-capinfra-code repo is included when include-cap-repos is true"
+          else
+            echo "❌ cloud-capinfra-code repo should be included when include-cap-repos is true but is not"
+            exit 1
+          fi
+
+          if [[ "${{ steps.config-exclude-cap.outputs.repos }}" != *"cloud-capinfra-code"* ]]; then
+            echo "✅ cloud-capinfra-code repo is excluded when include-cap-repos is false"
+          else
+            echo "❌ cloud-capinfra-code repo should be excluded when include-cap-repos is false but is included"
+            exit 1
+          fi
+
+  generate-ci-token-not-authorized-repo:
+    if: ${{ !startsWith(github.head_ref , 'autodoc--') && !startsWith(github.head_ref , 'release-please-') }}
+    runs-on: 'ubuntu-latest'
+    name: Generate CI Token for non authorized repo  
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::767397814329:role/github-actions-ci-token
+          aws-region: eu-west-1
+
+      - name: Load configuration
+        id: config
+        uses: ./internal/get-config
+        with:
+          platform-repo: "${{env.PLATFORM_REPO}}"
+
+      - name: Disable authorization bypass for org owner and org roles
+        id: filtered-config
+        shell: bash
+        env:
+          APPS_CONFIG: ${{ steps.config.outputs.apps }}
+        run: |
+          CONFIG=$(echo "$APPS_CONFIG" | yq 'del(.settings.authorization_bypass)')
+          {
+            echo "config<<EOF"
+            echo "$CONFIG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Generate scoped token - non authorized repo
+        id: get-token
+        continue-on-error: true
+        uses: ./internal/get-token
+        with:
+          config: ${{ steps.filtered-config.outputs.config }}
+          profile: 'reader'
+          repositories: ${{ env.REPOS_NON_AUTHORIZED }}          
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Verify Generate scoped token - non authorized repo failed
+        run: |
+          if [ "${{ steps.get-token.outcome }}" = "failure" ]; then
+            echo "✅ Generate token correctly failed for non authorized repo '${{ env.REPOS_NON_AUTHORIZED }}'"
+          else
+            echo "❌ Generate token should have failed for non authorized repo '${{ env.REPOS_NON_AUTHORIZED }}' but succeeded"
+            exit 1
+          fi
+
+  generate-ci-token-multiple-platform-repos:
+    if: ${{ !startsWith(github.head_ref , 'autodoc--') && !startsWith(github.head_ref , 'release-please-') }}
+    runs-on: 'ubuntu-latest'
+    name: Generate CI Token for multiple platform repos  
+    outputs:
+      token: ${{ steps.get-token.outputs.token }}
+      platform-token: ${{ steps.get-token.outputs.token }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::767397814329:role/github-actions-ci-token
+          aws-region: eu-west-1
+
+      - name: Load configuration
+        id: config
+        uses: ./internal/get-config
+        with:
+          platform-repo: "${{env.PLATFORM_REPO}},${{env.SPECTRAL_PLATFORM_REPO}}"
+
+      - name: Generate scoped token
+        id: get-token        
+        uses: ./internal/get-token
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: 'reader'
+          repositories: ${{ env.REPO_OK }}
+          platform-repositories: ${{ steps.config.outputs.repos }}          
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+      
+  test-checkout-ok:
+    needs: generate-ci-token
+    runs-on: ubuntu-latest
+    name: "Test: checkout OK (should succeed)"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Decrypt token
+        id: decrypt
+        uses: ./decrypt
+        with:
+            token: ${{ needs.generate-ci-token.outputs.token }}            
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Decrypt token (Platform)
+        id: decrypt-platform
+        uses: ./decrypt
+        with:
+            token: ${{ needs.generate-ci-token.outputs.platform-token }}            
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Checkout mapfre-tech/${{ env.REPO_OK }}
+        uses: actions/checkout@v6
+        with:
+          repository: mapfre-tech/${{ env.REPO_OK }}
+          token: ${{ steps.decrypt.outputs.token }}
+      
+      - name: Checkout mapfre-tech/${{ env.PLATFORM_REPO }}
+        uses: actions/checkout@v6
+        with:
+          repository: mapfre-tech/${{ env.PLATFORM_REPO }}
+          token: ${{ steps.decrypt-platform.outputs.token }}
+          path: platform-repo
+      
+
+      - name: Verify checkout succeeded
+        run: |
+          echo "✅ Successfully cloned mapfre-tech/${{ env.REPO_OK }}"
+          echo "✅ Successfully cloned mapfre-tech/${{ env.PLATFORM_REPO }}"
+          ls -la
+
+  test-download-file-api:
+    needs: generate-ci-token-multiple-platform-repos
+    runs-on: ubuntu-latest
+    name: "Test: download file via API (should succeed)" 
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Decrypt token
+        id: decrypt
+        uses: ./decrypt
+        with:
+            token: ${{ needs.generate-ci-token-multiple-platform-repos.outputs.platform-token }}            
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Checkout mapfre-tech/${{ env.SPECTRAL_PLATFORM_REPO }}
+        uses: actions/checkout@v6
+        with:
+          repository: mapfre-tech/${{ env.SPECTRAL_PLATFORM_REPO }}
+          token: ${{ steps.decrypt.outputs.token }}
+          path: platform-repo      
+
+      - name: Download file from mapfre-tech/${{ env.SPECTRAL_PLATFORM_REPO }} via API
+        id: download-file
+        env: 
+          TOKEN: "${{ steps.decrypt.outputs.token }}"
+          REPO: "mapfre-tech/${{ env.SPECTRAL_PLATFORM_REPO }}"          
+          REF: "main"
+        run: |         
+            ARCHIVE_URL="https://api.github.com/repos/${REPO}/tarball/${REF}"
+            TMP_DIR="$(mktemp -d)"
+            ARCHIVE_FILE="${TMP_DIR}/rules.tar.gz"
+
+            echo "⬇️ Descargando reglas desde ${REPO}@${REF}. Url: ${ARCHIVE_URL}"
+            echo "🔐 Usando token para descarga de reglas"
+            set +e
+            HTTP_STATUS=$(curl -sSL \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -w "%{http_code}" \
+              "${ARCHIVE_URL}" \
+              -o "${ARCHIVE_FILE}")
+            CURL_EXIT=$?
+            set -e
+            if [ "${CURL_EXIT}" -ne 0 ] || [ "${HTTP_STATUS}" -ne 200 ]; then
+              echo "::error::Error descargando reglas (${REPO}@${REF}). HTTP=${HTTP_STATUS}. Verifica token y permisos al repo privado."
+              exit 1
+            fi
+
+            if [ -f "${ARCHIVE_FILE}" ]; then
+              echo "✅ Successfully downloaded ${ARCHIVE_FILE} from ${REPO}"
+            else
+              echo "❌ Failed to download ${ARCHIVE_FILE} from ${REPO}"
+              exit 1
+            fi
+  test-read-write-variables:
+    needs: generate-ci-token
+    runs-on: ubuntu-latest
+    name: "Test: read/write variables (should succeed)"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Decrypt token
+        id: decrypt
+        uses: ./decrypt
+        with:
+            token: ${{ needs.generate-ci-token.outputs.token }}            
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Write variable to mapfre-tech/${{github.event.repository.name}}
+        env:
+          GH_TOKEN: ${{ steps.decrypt.outputs.token }}
+        run : |
+          gh variable set TEST_VAR_${GITHUB_RUN_ID} --body "Hello, World!" --repo "mapfre-tech/${{github.event.repository.name}}"
+
+      - name: Verify variable read/write succeeded
+        env:
+          GH_TOKEN: ${{ steps.decrypt.outputs.token }}
+        run: |
+          VALUE=$(gh variable get TEST_VAR_${GITHUB_RUN_ID} --repo "mapfre-tech/${{github.event.repository.name}}")
+          if [ "$VALUE" = "Hello, World!" ]; then
+            echo "✅ Successfully read/write variable from/to mapfre-tech/${{github.event.repository.name}}"
+          else
+            echo "❌ Failed to read/write variable from/to mapfre-tech/${{github.event.repository.name}}"
+            exit 1
+          fi
+      - name: Clean up variable
+        env:
+          GH_TOKEN: ${{ steps.decrypt.outputs.token }}
+        run : |
+          gh variable delete TEST_VAR_${GITHUB_RUN_ID} --repo "mapfre-tech/${{github.event.repository.name}}"
+
+  test-checkout-fail:
+    needs: generate-ci-token
+    runs-on: ubuntu-latest
+    name: "Test: checkout FAIL (should fail)"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Decrypt token
+        id: decrypt
+        uses: ./decrypt
+        with:
+            token: ${{ needs.generate-ci-token.outputs.token }}
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Attempt checkout mapfre-tech/${{ env.REPO_FAIL }}
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@v6
+        with:
+          repository: mapfre-tech/${{ env.REPO_FAIL }}
+          token: ${{ steps.decrypt.outputs.token }}
+
+      - name: Verify checkout failed
+        run: |
+          if [ "${{ steps.checkout.outcome }}" = "failure" ]; then
+            echo "✅ Checkout correctly failed for mapfre-tech/${{ env.REPO_FAIL }} (token not scoped to this repo)"
+          else
+            echo "❌ Checkout should have failed for mapfre-tech/${{ env.REPO_FAIL }} but succeeded"
+            exit 1
+          fi
+    
+  test-revoke-token:
+    needs: [generate-ci-token, test-checkout-ok, test-checkout-fail]
+    runs-on: ubuntu-latest
+    name: "Test: revoke token"
+    steps:
+      - uses: actions/checkout@v6
+     
+      - name: Revoke tokens
+        uses: ./revoke
+        with:
+            token: ${{ needs.generate-ci-token.outputs.token }}
+            platform-token: ${{ needs.generate-ci-token.outputs.platform-token }}
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Decrypt token
+        id: decrypt
+        uses: ./decrypt
+        with:
+            token: ${{ needs.generate-ci-token.outputs.token }}            
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Decrypt token (Platform)
+        id: decrypt-platform
+        uses: ./decrypt
+        with:
+            token: ${{ needs.generate-ci-token.outputs.platform-token }}            
+            gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Attempt checkout mapfre-tech/${{ env.REPO_OK }} with revoked token
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@v6
+        with:
+          repository: mapfre-tech/${{ env.REPO_OK }}
+          token: ${{ steps.decrypt.outputs.token }}
+
+      - name: Verify checkout failed
+        run: |
+          if [ "${{ steps.checkout.outcome }}" = "failure" ]; then
+            echo "✅ Checkout correctly failed for mapfre-tech/${{ env.REPO_OK }} (token revoked)"
+          else
+            echo "❌ Checkout should have failed for mapfre-tech/${{ env.REPO_OK }} but succeeded"
+            exit 1
+          fi
+     
+      - name: Attempt checkout mapfre-tech/${{ env.PLATFORM_REPO }} with revoked token
+        id: checkout-platform-repo
+        continue-on-error: true
+        uses: actions/checkout@v6
+        with:
+          repository: mapfre-tech/${{ env.PLATFORM_REPO }}
+          token: ${{ steps.decrypt-platform.outputs.token }}
+
+      - name: Verify checkout failed
+        run: |
+          if [ "${{ steps.checkout-platform-repo.outcome }}" = "failure" ]; then
+            echo "✅ Checkout correctly failed for mapfre-tech/${{ env.PLATFORM_REPO }} (token revoked)"
+          else
+            echo "❌ Checkout should have failed for mapfre-tech/${{ env.PLATFORM_REPO }} but succeeded"
+            exit 1
+          fi
+  test-zeus-actor-resolution:
+    # PTIZ-4582 — end-to-end test of Zeus dispatch propagation.
+    #
+    # Simulates the controlplane by:
+    #   1. Minting a deployer token scoped to this repo.
+    #   2. Creating refs/registry/run/<owner>/<repo>/<run_id>/<simulated_actor>/<timestamp>
+    #      in this same repo (acts as the registry for the test).
+    #   3. Re-invoking get-token, overriding zeus_actor_resolution.registry_repo
+    #      so the resolver reads from this repo, and forcing
+    #      caller-actor='APP-GITHUBOPS_mapfre' to trigger the rewrite path.
+    #   4. Asserting telemetry carries the resolved actor.
+    #   5. Cleanup (always): delete the ref and the dummy branch.
+    if: ${{ !startsWith(github.head_ref , 'autodoc--') && !startsWith(github.head_ref , 'release-please-') }}
+    runs-on: 'ubuntu-latest'
+    name: "Test: Zeus actor resolution (PTIZ-4582)"
+    env:
+      SIMULATED_ACTOR: ${{ github.actor }}
+      DISPATCHER_ACCOUNT: 'APP-GITHUBOPS_mapfre'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::767397814329:role/github-actions-ci-token
+          aws-region: eu-west-1
+
+      - name: Load configuration
+        id: config
+        uses: ./internal/get-config
+
+      # ── Step 1: mint a deployer token to write the registry ref ──────────
+      - name: Mint deployer token (registry writer)
+        id: mint-writer
+        uses: ./internal/get-token
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: 'deployer'
+          repositories: ${{ github.repository }}
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Decrypt registry-writer token
+        id: decrypt-writer
+        uses: ./decrypt
+        with:
+          token: ${{ steps.mint-writer.outputs.token }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      # ── Step 2: publish the simulated Zeus ref ───────────────────────────
+      - name: Publish refs/registry/run/<owner>/<repo>/<run_id>/<actor>/<timestamp>
+        id: publish-ref
+        env:
+          GH_TOKEN: ${{ steps.decrypt-writer.outputs.token }}
+        run: |
+          set -euo pipefail
+          SHA="${GITHUB_SHA}"
+          TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
+          REF_NAME="refs/registry/run/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${SIMULATED_ACTOR}/${TIMESTAMP}"
+          echo "Publishing ${REF_NAME} → ${SHA}"
+          gh api -X POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="${REF_NAME}" \
+            -f sha="${SHA}"
+          echo "ref_name=${REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      # ── Step 3: override registry_repo → this repo, then resolve ─────────
+      - name: Override zeus_actor_resolution.registry_repo → this repo
+        id: config-zeus
+        env:
+          APPS_CONFIG: ${{ steps.config.outputs.apps }}
+          REGISTRY_REPO: ${{ github.event.repository.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONFIG=$(echo "$APPS_CONFIG" | yq \
+            '.settings.zeus_actor_resolution.registry_repo.default = env(REGISTRY_REPO)')
+          {
+            echo "config<<EOF"
+            echo "$CONFIG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate deployer token with Zeus actor resolution
+        id: get-token-zeus
+        uses: ./internal/get-token
+        with:
+          config: ${{ steps.config-zeus.outputs.config }}
+          profile: 'deployer'
+          repositories: ${{ github.repository }}
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ env.DISPATCHER_ACCOUNT }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Assert telemetry carries the resolved (human) actor
+        env:
+          TELEMETRY: ${{ steps.get-token-zeus.outputs.telemetry }}
+        run: |
+          set -euo pipefail
+          RESOLVED=$(echo "$TELEMETRY" | jq -r '.caller_actor')
+          echo "telemetry.caller_actor = $RESOLVED (expected: $SIMULATED_ACTOR)"
+          if [[ "$RESOLVED" != "$SIMULATED_ACTOR" ]]; then
+            echo "::error::Zeus actor was NOT resolved (got '$RESOLVED', expected '$SIMULATED_ACTOR')"
+            exit 1
+          fi
+          echo "✅ Zeus actor correctly resolved to '$RESOLVED'"
+
+      # ── Step 4: cleanup (always run) ─────────────────────────────────────
+      - name: Cleanup — delete simulated ref
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.decrypt-writer.outputs.token }}
+          REF_NAME: ${{ steps.publish-ref.outputs.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${REF_NAME:-}" ]]; then
+            REF_PATH="${REF_NAME#refs/}"
+            echo "Deleting ${REF_NAME}"
+            gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/git/refs/${REF_PATH}" || true
+          fi

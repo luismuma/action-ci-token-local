@@ -1,0 +1,22 @@
+{
+  "prompt-creator": {
+    "source": {
+      "name": "arch-ram-air",
+      "repo": "mapfre-tech/arch-ram-air",
+      "path": "skills"
+    },
+    "ref": "main",
+    "skillPath": "skills/prompt-creator",
+    "commitSHA": "148720a4ebcc09c45c8d31eb1ba3cf6652afd06f",
+    "treeSHA": "1c7bb6d807464e9bb72fa8153e4c4509638227b3",
+    "files": [
+      "LICENSE.txt",
+      "SKILL.md",
+      "references/prompt-examples.md",
+      "references/prompt-patterns.md",
+      "scripts/init_prompt.py",
+      "scripts/quick_validate_prompt.py"
+    ],
+    "installedAt": "2026-07-21T12:27:55.063Z"
+  }
+}

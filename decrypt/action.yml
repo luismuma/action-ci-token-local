@@ -1,0 +1,45 @@
+# =============================================================================
+# decrypt — Composite Action
+#
+# Decrypts an AES-256-CBC encrypted token using a passphrase.
+# =============================================================================
+
+name: Decrypt Token
+description: 'Decrypt an AES-256-CBC encrypted token using a passphrase'
+
+inputs:
+  token:
+    description: 'Encrypted token (base64-encoded AES-256-CBC ciphertext)'
+    required: true
+  gh_token_encryption_passphrase:
+    description: 'Passphrase used to decrypt the token'
+    required: true
+
+outputs:
+  token:
+    description: 'Decrypted token value'
+    value: ${{ steps.decrypt.outputs.token }}
+
+runs:
+  using: composite
+  steps:
+     # check if token is base64 encoded
+    - name: Decrypt token
+      id: decrypt
+      shell: bash
+      env:
+        ENCRYPTED_TOKEN: ${{ inputs.token }}
+        PASSPHRASE: ${{ inputs.gh_token_encryption_passphrase }}
+      run: |
+        decrypted=$(echo -n "$ENCRYPTED_TOKEN" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -d -k "$PASSPHRASE")
+        echo "::add-mask::$ENCRYPTED_TOKEN"
+        echo "::add-mask::${decrypted}"
+        echo "token=${decrypted}" >> "$GITHUB_OUTPUT"
+
+
+    - name: Check if decryption was successful
+      if: always() && steps.decrypt.outcome == 'failure' && github.run_attempt > 1
+      shell: bash
+      run: |
+        echo "::error::Decryption failed. Please re-run the entire workflow to ensure a new token is generated. For more information, see https://docs.zeus.mapfre.com/8ba7b8109dad11d180b400c04fd430cf/1f7094066cf557db9391713055249220"
+        exit 1

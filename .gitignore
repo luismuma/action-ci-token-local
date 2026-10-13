@@ -1,0 +1,146 @@
+### Archivos de sistema ###
+.DS_Store
+Thumbs.db
+desktop.ini
+
+### Control de versiones y backups ###
+*.swp
+*.swo
+*.swn
+*.bak
+*.tmp
+*.orig
+
+### Logs ###
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+### Dependencias ###
+node_modules/
+package-lock.json
+yarn.lock
+
+vendor/
+
+### Entornos virtuales y paquetes ###
+venv/
+.env
+.envrc
+.pipenv/
+__pycache__/
+*.py[cod]
+*.so
+Pipfile
+Pipfile.lock
+
+### Archivos binarios y compilados ###
+*.exe
+*.dll
+*.so
+*.dylib
+*.class
+*.jar
+*.war
+*.ear
+*.pyc
+*.pyo
+*.o
+*.a
+*.out
+*.obj
+*.lib
+*.dSYM/
+
+### IDEs y editores ###
+# Visual Studio Code
+.devcontainer/
+.vscode/
+*.code-workspace
+
+# JetBrains (IntelliJ, PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# NetBeans
+nbproject/
+
+# Vim
+*.swp
+*.swo
+
+### Bases de datos locales ###
+*.sqlite
+*.sqlite3
+*.db
+*.mdb
+
+### Archivos de configuración y secretos ###
+secrets/
+*.pem
+*.crt
+*.key
+*.pfx
+*.cert
+*.kdbx
+.env
+
+### Docker ###
+.dockerignore
+docker-compose.override.yml
+
+### CI/CD ###
+.github/workflows/*.log
+.gitlab-ci.yml
+
+### Kubernetes y Terraform ###
+*.tfstate
+*.tfstate.backup
+.kube/
+kubeconfig
+
+### Maven y Gradle ###
+.mvn/
+target/
+*.jar
+*.war
+*.ear
+pom.xml.tag
+pom.xml.releaseBackup
+release.properties
+
+.gradle/
+build/
+*.lock
+
+### Python ###
+.mypy_cache/
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+sources/static/
+.pytest_cache
+
+
+### JavaScript / TypeScript ###
+.next/
+.nuxt/
+dist/
+out/
+
+### Otros ###
+*.zip
+*.tar.gz
+*.7z
+*.rar
+*.bak
+*.tmp
+*.cache

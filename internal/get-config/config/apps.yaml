@@ -1,0 +1,156 @@
+# =============================================================================
+# GitHub App pool configuration
+#
+# All token generation config lives here. Add new apps to scale rate limit
+# capacity per profile. Each app needs a corresponding AWS secret.
+# =============================================================================
+
+settings:
+  # Threshold for remaining rate limit to trigger App rotation
+  rate_limit_threshold: 150
+  # Whether to rotate org secret (GH_TOKEN_ENCRYPTION_PASSPHRASE) after it's used (for secrets profile)
+  # If true add permission: "organization_secrets: write" to the secrets profile
+  rotate_org_secret: True
+  # authorization bypass settings
+  authorization_bypass:
+    # Whether to bypass team-membership authorization if actor is org owner
+    org_owner: true
+    # Whether to bypass team-membership authorization if actor has any of the specified organization role IDs
+    # Format: role_name: role_id
+    org_roles:
+      WRITE: 8134
+      MAINTAIN: 8135
+      ADMIN: 8136
+    # Allowlist of platform CI actors (typically GitHub Apps) that are pre-authorized
+    # for team-membership profiles. Use when a workflow is legitimately triggered by
+    # a platform bot whose push generates a downstream event (e.g. release-please
+    # bot pushing a release commit that re-triggers the pipeline). A bot is never
+    # a member of human repo teams, so team-based checks would deny it.
+    #
+    # Match on 'actor' is case-insensitive. Each entry may be:
+    #   - a plain string (login) — defaults to profiles=[reader], same_entity_product_only=true
+    #   - a dict with explicit constraints:
+    #       actor: <login>
+    #       profiles: [reader]                # profiles where the bypass applies
+    #       same_entity_product_only: true    # if true, every requested repo must share
+    #                                         # the <entity>-<product> prefix of caller_repo
+    #                                         # (repo naming: <entity>-<product>-<component>)
+    #                                         # e.g. caller arch-ram-test → arch-ram-example1 OK,
+    #                                         #      arch-mar2-example1 denied
+    #
+    # SECURITY: keep same_entity_product_only=true and profiles restricted to 'reader'
+    # unless you have a documented reason. Widening either lets a user with write access
+    # to any repo mint scoped tokens against other repos by spoofing caller-actor.
+    # Empty list disables the feature.
+    trusted_actors:
+      - actor: mapfre-ci-reader[bot]
+        profiles: [reader]
+        same_entity_product_only: true
+      - actor: mapfre-ci-reader-2[bot]
+        profiles: [reader]
+        same_entity_product_only: true
+      - actor: mapfre-ci-deployer[bot]
+        profiles: [reader]
+        same_entity_product_only: true
+      - actor: mapfre-ci-deployer-2[bot]
+        profiles: [reader]
+        same_entity_product_only: true
+  # Zeus actor resolution
+  #
+  # When Zeus (the internal orchestrator) launches a workflow through
+  # arch-plat-lambda-controlplane, github.actor collapses to the tech account
+  # of the controlplane PAT (an org owner). That account would silently pass
+  # every authorization check and pollute telemetry.
+  #
+  # The controlplane, right after POST /dispatches (api-version 2026-03-10),
+  # reads workflow_run_id from the response body and creates a hidden ref
+  # in the central registry repo, using the convention:
+  #   refs/registry/run/<owner>/<repo>/<run_id>/<actor>/<timestamp>
+  # This action looks that ref up and rewrites caller_actor to the real
+  # human before authorization and telemetry.
+  #
+  # Applies to every profile except those listed in skip_profiles.
+  zeus_actor_resolution:
+    enabled: true
+    # github.actor values that mean "this dispatch came from Zeus"
+    dispatcher_accounts:
+      - APP-GITHUBOPS_mapfre
+    # Central registry repo (without the org prefix)
+    registry_repo: 
+      default: arch-plat-zeus-actor-registry 
+      mapfre-test-pre: archpre-plat-zeus-actor-registry
+    # Ref namespace convention agreed with the controlplane. The action
+    # queries: <ref_prefix>/<caller_repo>/<GITHUB_RUN_ID>/ and extracts the
+    # last path component as the real actor.
+    ref_prefix: refs/registry/run
+    # Behaviour when caller_actor is a dispatcher but no ref exists
+    #   fail  → sys.exit (default; use in steady state)
+    #   warn  → keep original caller_actor (use only during rollout window)
+    on_missing: fail
+    # Profiles that must NOT go through resolution (empty by default)
+    skip_profiles: []
+    # App profile used to mint a Contents:Read token scoped to the registry repo 
+    #  it will use the profile (reader) apps pool to request a token.
+    reader_app_profile: reader
+
+profiles:
+  # Reader profile with team-based authorization, used for general CI tasks
+  reader:
+    authorization: team-membership
+    # $entity-adm + $entity-$product-$team_suffix    
+    team_suffixes:
+      - "-ctb"
+      - "-dev"
+      - "-own"
+      - "-mnt"
+    custom_teams:
+      - action: arch-gha
+    permissions:
+      contents: read
+      actions: read
+      metadata: read
+    apps:
+      - id: 3727002
+        name: mapfre-ci-reader
+        aws_secret: github-actions-ci-token/ci-reader-app-private-key
+      - id: 4057899
+        name: mapfre-ci-reader-2
+        aws_secret: github-actions-ci-token/ci-reader-2-app-private-key
+  # Deployer profile with team-based authorization, used for deployment tasks
+  deployer:
+    authorization: team-membership
+    team_suffixes:
+    # $entity-adm + $entity-$product-$team_suffix    
+      - "-own"
+      - "-mnt"
+    custom_teams:
+      - action: arch-gha
+    permissions:
+      contents: write
+      actions: write
+      pull_requests: write
+      metadata: read
+      actions_variables: write
+    apps:
+      - id: 3727037
+        name: mapfre-ci-deployer
+        aws_secret: github-actions-ci-token/ci-deployer-app-private-key
+      - id: 4057966
+        name: mapfre-ci-deployer-2
+        aws_secret: github-actions-ci-token/ci-deployer-2-app-private-key
+  # Secrets profile for managing GitHub secrets, no authorization requirements
+  secrets:
+    authorization: none
+    permissions:
+      secrets: write     
+      metadata: read
+      organization_secrets: write
+    apps:
+      - id: 3778507
+        name: mapfre-ci-secrets
+        aws_secret: github-actions-ci-token/ci-secrets-app-private-key
+      - id: 4057945
+        name: mapfre-ci-secrets-2
+        aws_secret: github-actions-ci-token/ci-secrets-2-app-private-key
+
+

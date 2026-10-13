@@ -1,0 +1,36 @@
+# =============================================================================
+# get-config — Composite Action
+#
+# Reads the GitHub App pool configuration from config/apps.yaml and the
+# platform repositories list from config/repos.yml, exposing both as outputs.
+# =============================================================================
+
+name: Get Config
+description: 'Load GitHub App pool configuration and platform repositories list'
+inputs:
+  platform-repo:
+    description: 'Comma-separated list of platform repositories from allowed list (e.g. "arch-ram-reusable-workflows"). If blank, all platform repositories will be included.'
+    required: false
+  include-cap-repos:
+    description: 'Whether to include CAP repositories in the output list (true/false). Default: false'
+    required: false
+    default: "false"
+outputs:
+  apps:
+    description: 'YAML configuration content (apps.yaml)'
+    value: ${{ steps.read.outputs.apps }}
+  repos:
+    description: 'Comma-separated list of platform repositories'
+    value: ${{ steps.read.outputs.repos }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read config files
+      id: read
+      shell: bash
+      env:
+        CONFIG_PATH: ${{ github.action_path }}/config
+        INCLUDE_CAP_REPOS: ${{ inputs.include-cap-repos }}
+        PLATFORM_REPO_INPUT: ${{ inputs.platform-repo }}
+      run: python "${{ github.action_path }}/get-config.py"

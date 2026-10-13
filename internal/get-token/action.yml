@@ -1,0 +1,79 @@
+# =============================================================================
+# get-token — Composite Action
+#
+# Generates a scoped GitHub App installation token using the app pool config
+# and private keys provided via environment variables.
+# =============================================================================
+
+name: Get Token
+description: 'Generate a scoped GitHub App installation token. Fetches private keys
+  directly from AWS Secrets Manager — keys never touch GITHUB_ENV.'
+
+inputs:
+  aws-region:
+    description: 'AWS region for Secrets Manager'
+    required: false
+    default: 'eu-west-1'
+  config:
+    description: 'YAML configuration content (from get-config action)'
+    required: true
+  profile:
+    description: 'Permission profile: reader or deployer'
+    required: false
+    default: 'reader'
+  repositories:
+    description: 'Comma-separated list of repos to scope the token'
+    required: false
+    default: ''
+  platform-repositories:
+    description: 'Comma-separated list of platform repos always added'
+    required: false
+    default: ''
+  caller-repo:
+    description: 'Repository that invoked this workflow'
+    required: true
+  caller-actor:
+    description: 'Actor that triggered the workflow'
+    required: true
+  github-org:
+    description: 'GitHub organization name'
+    required: true
+  gh_token_encryption_passphrase:
+    description: 'Passphrase for encrypting the generated token'
+    required: true
+
+outputs:
+  token:
+    description: 'Token with permissions scoped to the specified repositories'
+    value: ${{ steps.generate.outputs.encoded_token }}
+  telemetry:
+    description: 'JSON telemetry event'
+    value: ${{ steps.generate.outputs.telemetry }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip --quiet
+        python -m pip install \
+          --require-hashes \
+          --no-deps \
+          -r "${{ github.action_path }}/requirements.txt" \
+          --quiet
+
+    - name: Generate scoped token
+      id: generate
+      shell: bash
+      env:
+        APPS_CONFIG: ${{ inputs.config }}
+        PROFILE: ${{ inputs.profile }}
+        REPOSITORIES: ${{ inputs.repositories }}
+        PLATFORM_REPOSITORIES: ${{ inputs.platform-repositories }}
+        CALLER_REPO: ${{ inputs.caller-repo }}
+        CALLER_ACTOR: ${{ inputs.caller-actor }}
+        GITHUB_ORG: ${{ inputs.github-org }}
+        GH_TOKEN_ENCRYPTION_PASSPHRASE: ${{ inputs.gh_token_encryption_passphrase }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: python "${{ github.action_path }}/get-token.py"

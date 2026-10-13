@@ -1,0 +1,66 @@
+# =============================================================================
+# revoke — Composite Action
+#
+# Revokes an installation token.
+# =============================================================================
+
+name: Revoke Tokens
+description: 'Revoke an installation token'
+
+inputs:
+  token:
+    description: 'Token (encrypted or decrypted) to revoke'
+    required: true
+  platform-token:
+    description: 'Token - Platform (encrypted or decrypted)'
+    required: false
+  gh_token_encryption_passphrase:
+    description: 'Passphrase used to decrypt the token (mandatory if encrypted token(s) provided)'
+    required: false
+
+runs:
+  using: composite
+  steps:
+  
+    - name: Decrypt token
+      if: ${{ inputs.gh_token_encryption_passphrase }}
+      id: decrypt
+      shell: bash
+      env:
+        ENCRYPTED_TOKEN: ${{ inputs.token }}        
+        PASSPHRASE: ${{ inputs.gh_token_encryption_passphrase }}
+      run: |
+        decrypted=$(echo -n "$ENCRYPTED_TOKEN" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -d -k "$PASSPHRASE")
+        echo "::add-mask::$ENCRYPTED_TOKEN"
+        echo "::add-mask::${decrypted}"
+        echo "token=${decrypted}" >> "$GITHUB_OUTPUT"
+
+    - name: Decrypt platform token
+      id: decrypt-platform
+      if: ${{ inputs.platform-token && inputs.gh_token_encryption_passphrase }}
+      shell: bash
+      env:
+        ENCRYPTED_TOKEN: ${{ inputs.platform-token }}
+        PASSPHRASE: ${{ inputs.gh_token_encryption_passphrase }}
+      run: |
+        decrypted=$(echo -n "$ENCRYPTED_TOKEN" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -d -k "$PASSPHRASE")
+        echo "::add-mask::$ENCRYPTED_TOKEN"
+        echo "::add-mask::${decrypted}"
+        echo "platform-token=${decrypted}" >> "$GITHUB_OUTPUT"     
+
+    - name: Revoke Token
+      uses: actions/github-script@v9     
+      with:
+        github-token: ${{ steps.decrypt.outputs.token || inputs.token }}
+        script: |
+          await github.rest.apps.revokeInstallationAccessToken();
+          core.notice("Token revoked successfully");
+    
+    - name: Revoke Platform Token
+      if: ${{ inputs.platform-token && inputs.platform-token != inputs.token }}
+      uses: actions/github-script@v9     
+      with:
+        github-token: ${{ steps.decrypt-platform.outputs.platform-token || inputs.platform-token }}
+        script: |
+          await github.rest.apps.revokeInstallationAccessToken();
+          core.notice("Platform token revoked successfully");

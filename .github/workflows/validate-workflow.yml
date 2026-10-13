@@ -1,0 +1,40 @@
+# Copyright (c) MAPFRE DevOps Platform
+
+name: Validate workflow 
+run-name: "Validate get-token.yml workflow #${{ github.run_number }}: ${{ github.event.pull_request.title }}"
+
+on:  
+
+  workflow_call:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    branches: 
+      - develop
+      - main
+      - master
+
+
+
+jobs:
+  validate-workflow:   
+    name: Validate get-token.yml workflow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+    # Check every `uses:` entry in get-token.yml is version-tagged with @v...
+      - name: Check get-token.yml only uses @v-tagged actions
+        run: |
+          invalid_uses=$(grep -nE '^\s*uses:\s*' ./.github/workflows/get-token.yml | grep -vE '@v[^[:space:]]*$' || true)
+
+          if [ -n "$invalid_uses" ]; then
+            echo "::error::Found actions in get-token.yml without @v tag. Every uses: must end with @v..."
+            echo "$invalid_uses"
+            exit 1
+          fi
+
+          echo "All uses: entries in get-token.yml are tagged with @v..."
+          

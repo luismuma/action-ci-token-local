@@ -1,0 +1,6 @@
+Complete License Terms
+
+Copyright (c) 2024-2025 MAPFRE Tech
+
+Este skill se distribuye bajo los términos de uso interno de MAPFRE Tech.
+Para uso externo, contactar con el equipo de arquitectura.

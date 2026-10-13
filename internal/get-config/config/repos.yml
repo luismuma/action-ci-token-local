@@ -1,0 +1,104 @@
+# Repositorios que se añaden automáticamente al scope de todos los tokens.
+# Uno por línea. Líneas vacías y comentarios (#) se ignoran.
+# Estos repos son necesarios para el funcionamiento de la plataforma CI
+# (validación de schemas, workflows reutilizables, etc.)
+platform-repositories:
+  - arch-ram-reusable-workflows
+  - arch-ram-reusable-workflows-front
+  - arch-mar2-reusable-workflows
+  - workflow-reusable-cap
+  - workflow-reusable-binding
+  - esp-pfdevops-reusable-workflows
+  # Mobile apps
+  - arch-ram-corp-ios-certificates
+  - arch-ram-corp-android-keystores
+  - arch-ram-corp-ios-certificates-dist
+  - arch-ram-corp-android-keystores-dist
+  - arch-ram-mobile-config
+  - arch-ram-fastlane-common-plugin
+  # Spectral rules repo
+  - arch-bsmar-mk-catalogvalidate
+  # Spain repos
+  - arch-ram-ios-certificates
+  - arch-ram-ios-certificates-dist
+  - arch-ram-android-keystores
+  - esp-aeme-reusable-workflows-front
+  - esp-aeme-sdm-reusable-workflows
+  - esp-ateneaes-devops-reusable-workflows
+  - esp-ateneaes-devops-sandbox
+cap-repositories:
+  # Common
+  - cloud-capinfra-code
+  - arch-ram-bom
+  - maptech-capinfra-configuration
+  - cloud-catservinf-catalog
+  - comms-egida-dns-pub-csi
+  # Azure
+  - cloud-azrinfserv-storage-spa-private-l3
+  - cloud-azrinfserv-db-nosql-mongodb-atlas-l3
+  - cloud-azrinfserv-storage-account-l3
+  - cloud-azrinfserv-compute-containers-aks-l3
+  - cloud-azrinfserv-application-gateway
+  - cloud-azrinfserv-storage-spa-public-l3
+  - cloud-azrinfserv-compute-containers-aks
+  - cloud-azrinfserv-compute-serverless-functions
+  - cloud-azrinfserv-compute-containers-aca-l3
+  - cloud-azrinfserv-db-nosql-mongodb-atlas
+  - cloud-azrinfserv-db-cache-redis-l3
+  - cloud-azrinfserv-storage-spa-private
+  - cloud-azrinfserv-db-relational-oracle-autonomous-l3
+  - cloud-azrinfserv-integration-api-apim-l3
+  - cloud-azrinfserv-storage-storage-account
+  - cloud-azrinfserv-security-key-vault
+  - cloud-azrinfserv-db-relational-oracle-autonomous
+  - cloud-azrinfserv-storage-spa-public
+  - cloud-azrinfserv-integration-api-apim
+  - cloud-azrinfserv-keyvault-tf-module
+  - cloud-azrinfserv-network-tf-module
+  - cloud-azrinfserv-compute-containers-aca
+  - cloud-azrinfserv-integration-events-confluent
+  - cloud-azrinfserv-db-cache-redis
+  - cloud-azrinfserv-integration-messages-service-bus
+  - cloud-azrinfserv-integration-events-event-grid
+  - cloud-azrinfserv-ia-services
+  - cloud-azrinfserv-networking-cdn-frontdoor
+  - cloud-azrinfserv-security-iam-managed-identity
+  - cloud-azrinfserv-networking-private-endpoint
+  - cloud-azrinfserv-resource-group
+  - cloud-azrinfserv-integration-events-confluent-l3
+  - cloud-azrinfserv-app-configuration
+  - cloud-azrinfserv-integration-workflows-logic-apps
+  - cloud-azrinfserv-compute-static-web-apps
+  - cloud-azrinfserv-compute-app-service-web-app
+  - cloud-azrinfserv-compute-app-service
+  - cloud-azrinfserv-ia_services
+  - cloud-azrinfserv-logging-resources
+  # AWS
+  - cloud-awsinfserv-storage-spa-public
+  - cloud-awsinfserv-integration-events-confluent
+  - cloud-awsinfserv-storage-objects-s3
+  - cloud-awsinfserv-integration-events-kinesis-flink
+  - cloud-awsinfserv-compute-containers-eks-tenant-es
+  - cloud-awsinfserv-compute-containers-eks-es
+  - cloud-awsinfserv-db-nosql-mongodb-atlas
+  - cloud-awsinfserv-db-relational-rds-postgresql
+  - cloud-awsinfserv-poseidon-terraform-provider
+  - cloud-awsinfserv-integration-api-apigateway
+  - cloud-awsinfserv-db-relational-aurora-postgresql
+  - cloud-awsinfserv-db-relational-aurora-mysql
+  - cloud-awsinfserv-storage-spa-private
+  - cloud-awsinfserv-common-tf-modules
+  - cloud-awsinfserv-compute-containers-ecs-fargate
+  - cloud-awsinfserv-security-certificate
+  - cloud-awsinfserv-db-relational-rds-oracle
+  - cloud-awsinfserv-db-relational-rds-mysql
+  - cloud-awsinfserv-db-cache-elasticache-redis
+  - cloud-awsinfserv-cert-renew  
+  - cloud-awsinfserv-l3-spa-public
+  - cloud-awsinfserv-network-dns-subdomain
+  - cloud-awsinfserv-compute-containers-helm-es
+  - cloud-awsinfserv-network-dns-record
+  - cloud-awsinfserv-db-relational-rds
+  - cloud-awsinfserv-trivy
+  - cloud-awsinfserv-compute-containers-eks
+  - cloud-awsinfserv-integration-email-ses

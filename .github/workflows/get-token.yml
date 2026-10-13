@@ -1,0 +1,139 @@
+# =============================================================================
+# Get CI Token — Reusable Workflow
+#
+# Generates scoped, ephemeral GitHub App installation tokens from a pool
+# of apps. Supports reader and deployer profiles with rate limit pooling
+# and team-based authorization.
+#
+# Authentication: OIDC federation with AWS — no GitHub secrets needed.
+# Private keys are stored in AWS Secrets Manager and retrieved at runtime.
+#
+# Usage:
+#   jobs:
+#     get-token:
+#       uses: mapfre-tech/action-ci-token/.github/workflows/get-token.yml@v1
+#       with:
+#         profile: reader
+#         repositories: "repo-1,repo-2"
+# =============================================================================
+
+name: Get CI Token
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: 'Permission profile: reader (default) or deployer'
+        required: false
+        type: string
+        default: 'reader'
+      repositories:
+        description: 'Comma-separated list of repos to scope the token (default: github.repository)'
+        required: false
+        type: string
+        default: ${{ github.repository }}
+      include-platform-repos:
+        description: 'Include platform repositories in token generation (default: false)'
+        required: false
+        type: boolean
+        default: false
+      include-cap-repos:
+        description: 'Whether to include CAP repositories in Platform Token (true/false). Default: false'
+        required: false
+        type: boolean
+        default: false
+      platform-repo:
+        description: '(Filter) Comma-separated list of platform repositories from allowed list (e.g. "arch-ram-reusable-workflows"). If blank, all platform repositories will be included.'
+        required: false
+        type: string
+
+    secrets:
+      GH_TOKEN_ENCRYPTION_PASSPHRASE:
+        description: 'Passphrase for encrypting the generated token'
+        required: true
+
+    outputs:
+      token:
+        description: 'Scoped installation token (1h expiry)'
+        value: ${{ jobs.generate-token.outputs.token }}
+      platform-token:
+        description: 'Scoped installation token (1h expiry) for Platform Repositories (Reader)'
+        value: ${{ jobs.generate-token.outputs.platform-token }}
+      telemetry:
+        description: 'JSON telemetry event'
+        value: ${{ jobs.generate-token.outputs.telemetry }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  generate-token:
+    name: Generate Token (${{ inputs.profile }})
+    runs-on: ubuntu-latest
+    outputs:
+      token: ${{ steps.get-token.outputs.token }}
+      platform-token: ${{ inputs.include-platform-repos && (steps.get-token-platform.outputs.token || steps.get-token.outputs.token) || '' }}
+      telemetry: ${{ steps.get-token.outputs.telemetry }}
+
+    steps:
+      - name: Validate profile
+        if: ${{ inputs.profile != 'reader' && inputs.profile != 'deployer' }}
+        run: |
+          echo "::error::Invalid profile: ${{ inputs.profile }}. Allowed values are 'reader' or 'deployer'."
+          exit 1
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::767397814329:role/github-actions-ci-token
+          aws-region: eu-west-1
+
+      - name: Load configuration
+        id: config
+        uses: mapfre-tech/action-ci-token/internal/get-config@v1
+        with:
+          platform-repo: ${{ inputs.platform-repo }}
+          include-cap-repos: ${{ inputs.include-cap-repos }}
+
+      - name: Generate scoped token
+        id: get-token
+        uses: mapfre-tech/action-ci-token/internal/get-token@v1
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: ${{ inputs.profile }}
+          repositories: ${{ inputs.repositories }}
+          # For reader profile, include platform repositories only when include-platform-repos is enabled.
+          platform-repositories: ${{  inputs.profile == 'reader' && (inputs.include-platform-repos && steps.config.outputs.repos) || '' }}
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+
+        # For deployer profile, generate an additional token with reader permissions for platform repositories
+      - name: Generate scoped token (Platform Repos - reader profile)
+        id: get-token-platform
+        if: inputs.profile == 'deployer' && inputs.include-platform-repos && steps.config.outputs.repos
+        uses: mapfre-tech/action-ci-token/internal/get-token@v1
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: ${{ 'reader' }}
+          repositories: ${{ inputs.repositories }}     
+          platform-repositories: ${{ steps.config.outputs.repos }}
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
+
+      - name: Refresh GH_TOKEN_ENCRYPTION_PASSPHRASE 
+        id: refresh-passphrase
+        uses: mapfre-tech/action-ci-token/internal/get-token@v1
+        with:
+          config: ${{ steps.config.outputs.apps }}
+          profile: 'secrets'
+          repositories: ${{ github.repository }}          
+          caller-repo: ${{ github.repository }}
+          caller-actor: ${{ github.actor }}
+          github-org: ${{ github.repository_owner }}
+          gh_token_encryption_passphrase: ${{ secrets.GH_TOKEN_ENCRYPTION_PASSPHRASE }}
